@@ -21,6 +21,13 @@ from rclpy.qos import QoSProfile
 
 from .communication import RosReceiver
 
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
+from geometry_msgs.msg import TransformStamped
+from tf2_msgs.msg import TFMessage
+
+import yaml
+
 
 class RosSubscriber(RosReceiver):
     """
@@ -43,6 +50,11 @@ class RosSubscriber(RosReceiver):
         self.tcp_server = tcp_server
         self.queue_size = queue_size
 
+        if self.topic == "/tf":
+            print(self.msg)
+            self.tf_buffer = Buffer()
+            self.tf_listener = TransformListener(self.tf_buffer, self)
+
         qos_profile = QoSProfile(depth=queue_size)
 
         # Start Subscriber listener function
@@ -61,8 +73,41 @@ class RosSubscriber(RosReceiver):
             self.msg: The deserialize message
 
         """
+
+        if self.topic == "/tf":
+            tf_msg = TFMessage()
+
+            tf_dict = yaml.load(self.tf_buffer.all_frames_as_yaml())
+
+            for child_frame, frame_data in tf_dict.items():
+                t = TransformStamped()
+
+                t.header.stamp = self.get_clock().now().to_msg()
+                t.header.frame_id = frame_data["parent"]
+                t.child_frame_id = child_frame
+
+                tf_stamped = self.get_tf(child_frame, frame_data["parent"])
+
+                t.transform.translation = tf_stamped.transform.translation
+                t.transform.rotation = tf_stamped.transform.rotation
+
+                tf_msg.transforms.append(t)
+
+            self.tcp_server.send_unity_message(self.topic, tf_msg)
+
         self.tcp_server.send_unity_message(self.topic, data)
         return self.msg
+
+    def get_tf(self, parent_frame, child_frame):
+        try:
+            return self.tf_buffer.lookup_transform(
+                child_frame, parent_frame, rclpy.time.Time()
+            )
+        except TransformException as ex:
+            self.get_logger().info(
+                f"Could not transform {child_frame} to {parent_frame}: {ex}"
+            )
+            return
 
     def unregister(self):
         """
