@@ -54,6 +54,7 @@ class RosSubscriber(RosReceiver):
             print(self.msg)
             self.tf_buffer = Buffer()
             self.tf_listener = TransformListener(self.tf_buffer, self)
+            self.timer = self.create_timer(5, self.send_tf)
 
         qos_profile = QoSProfile(depth=queue_size)
 
@@ -71,39 +72,42 @@ class RosSubscriber(RosReceiver):
 
         Returns:
             self.msg: The deserialize message
-
         """
 
         if self.topic == "/tf":
-            tf_msg = TFMessage()
-
-            tf_dict = yaml.load(self.tf_buffer.all_frames_as_yaml())
-
-            for child_frame, frame_data in tf_dict.items():
-                t = TransformStamped()
-
-                t.header.stamp = self.get_clock().now().to_msg()
-                t.header.frame_id = frame_data["parent"]
-                t.child_frame_id = child_frame
-
-                tf_stamped = self.get_tf(child_frame, frame_data["parent"])
-
-                t.transform.translation = tf_stamped.transform.translation
-                t.transform.rotation = tf_stamped.transform.rotation
-
-                tf_msg.transforms.append(t)
-
-            self.tcp_server.send_unity_message(self.topic, tf_msg)
+            return self.msg
 
         self.tcp_server.send_unity_message(self.topic, data)
         return self.msg
+
+    def send_tf(self):
+        tf_msg = TFMessage()
+
+        tf_dict = yaml.load(self.tf_buffer.all_frames_as_yaml())
+        time_stamp = self.get_clock().now().to_msg()
+
+        for child_frame, frame_data in tf_dict.items():
+            t = TransformStamped()
+
+            t.header.stamp = time_stamp
+            t.header.frame_id = frame_data["parent"]
+            t.child_frame_id = child_frame
+
+            tf_stamped = self.get_tf(child_frame, frame_data["parent"])
+
+            t.transform.translation = tf_stamped.transform.translation
+            t.transform.rotation = tf_stamped.transform.rotation
+
+            tf_msg.transforms.append(t)
+
+        self.tcp_server.send_unity_message(self.topic, tf_msg)
 
     def get_tf(self, parent_frame, child_frame):
         try:
             return self.tf_buffer.lookup_transform(
                 child_frame, parent_frame, rclpy.time.Time()
             )
-        except TransformException as ex:
+        except:
             self.get_logger().info(
                 f"Could not transform {child_frame} to {parent_frame}: {ex}"
             )

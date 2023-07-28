@@ -146,13 +146,16 @@ class UnityTcpSender:
                                 i[0], self.parse_message_name(node.msg)
                             )
                         )
-                topic_list.types = [
-                    item[1][0].replace("/msg/", "/")
-                    if (len(item[1]) <= 1)
-                    else self.parse_message_name(node.msg)
-                    for item in topics_and_types
-                ]
-            serialized_bytes = ClientThread.serialize_command("__topic_list", topic_list)
+                if node is not None:
+                    topic_list.types = [
+                        item[1][0].replace("/msg/", "/")
+                        if (len(item[1]) <= 1)
+                        else self.parse_message_name(node.msg)
+                        for item in topics_and_types
+                    ]
+            serialized_bytes = ClientThread.serialize_command(
+                "__topic_list", topic_list
+            )
             self.queue.put(serialized_bytes)
 
     def start_sender(self, conn, halt_event):
